@@ -67,7 +67,7 @@ func (o *Orchestrator) Run(ctx context.Context) (*RunResult, error) {
 	}
 
 	// 1. Docker availability preflight
-	if !o.cfg.NoBuild {
+	if !o.cfg.NoBuild && !o.cfg.DryRun {
 		if err := o.dockerClient.CheckAvailable(ctx); err != nil {
 			return nil, fmt.Errorf("docker preflight failed: Docker must be running on your system (or use --no-build flag): %w", err)
 		}

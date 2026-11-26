@@ -214,9 +214,23 @@ func generateGoDockerfile(svc *scanner.ServiceInfo) string {
 	if goVer == "" {
 		goVer = "1.22-alpine"
 	}
-	port := 8080
+
+	binaryPath := svc.StartCommand
+	if binaryPath == "" {
+		binaryPath = "/app/app"
+	}
+	buildCmd := svc.BuildCommand
+	if buildCmd == "" {
+		buildCmd = "CGO_ENABLED=0 GOOS=linux go build -ldflags=\"-w -s\" -o /app/app ."
+	}
+
+	var portBlock, healthBlock, cmdBlock string
 	if len(svc.Ports) > 0 {
-		port = svc.Ports[0]
+		port := svc.Ports[0]
+		portBlock = fmt.Sprintf("ENV PORT=%d\nEXPOSE %d\n", port, port)
+		healthBlock = fmt.Sprintf("HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\\n  CMD wget --no-verbose --tries=1 --spider http://localhost:%d/ || exit 1\n", port)
+	} else {
+		cmdBlock = "CMD [\"--help\"]\n"
 	}
 
 	return fmt.Sprintf(`# Multi-stage production Dockerfile for Go
@@ -230,7 +244,7 @@ RUN go mod download
 
 # Copy source and compile statically
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/server .
+RUN %s
 
 # Stage 2: Minimal secure runtime (scratch or alpine)
 FROM alpine:3.19 AS runner
@@ -240,16 +254,11 @@ WORKDIR /app
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
-COPY --from=builder /app/server /app/server
+COPY --from=builder %s %s
 
-ENV PORT=%d
-EXPOSE %d
-
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:%d/ || exit 1
-
-ENTRYPOINT ["/app/server"]
-`, goVer, port, port, port)
+%s%s
+ENTRYPOINT ["%s"]
+%s`, goVer, buildCmd, binaryPath, binaryPath, portBlock, healthBlock, binaryPath, cmdBlock)
 }
 
 func generateRustDockerfile(svc *scanner.ServiceInfo) string {
@@ -358,12 +367,16 @@ func generateDockerignore() string {
 .github
 .gitlab
 DOCKSHIP.md
+.gotmp/
+.dockship_tmp/
+bin/
+*.exe
+*.test
 
 # Dependencies & Build Artefacts
 node_modules/
 vendor/
 target/
-bin/
 obj/
 dist/
 build/

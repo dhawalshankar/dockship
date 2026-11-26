@@ -112,8 +112,12 @@ func (s *Scanner) Scan() (*ProjectInfo, error) {
 		}
 
 		// Check for env vars (without extracting secret values)
+		// Only extract from root directory or direct service directory, NOT from examples/testdata
 		if strings.HasPrefix(d.Name(), ".env") {
-			s.extractEnvVarKeys(path, info)
+			dirOfFile := filepath.Dir(rel)
+			if dirOfFile == "." || dirOfFile == "" {
+				s.extractEnvVarKeys(path, info)
+			}
 		}
 
 		// Keep representative file tree (limit tree size to prevent token blowup)

@@ -1,0 +1,43 @@
+# Git
+.git
+.gitignore
+
+# CI/CD and Dockship
+.github
+.gitlab
+DOCKSHIP.md
+
+# Dependencies & Build Artefacts
+node_modules/
+vendor/
+target/
+bin/
+obj/
+dist/
+build/
+.next/
+.nuxt/
+.cache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Environment and sensitive secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa
+credentials
+
+# OS and Editor metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.log

@@ -3,6 +3,7 @@ package scanner
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -293,14 +294,38 @@ func parsePythonManifest(dirPath string, svc *ServiceInfo) {
 
 func parseGoManifest(goModPath string, svc *ServiceInfo) {
 	svc.PackageManager = "go mod"
-	svc.BuildCommand = "CGO_ENABLED=0 GOOS=linux go build -o server ."
-	svc.StartCommand = "./server"
+	dirPath := filepath.Dir(goModPath)
+
+	// Determine entrypoint: check root or cmd/*
+	binaryName := svc.Name
+	if binaryName == "" || binaryName == "." {
+		binaryName = "app"
+	}
+	buildTarget := "."
+
+	if !fileExists(filepath.Join(dirPath, "main.go")) {
+		// Look in cmd/
+		cmdDir := filepath.Join(dirPath, "cmd")
+		if entries, err := os.ReadDir(cmdDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					buildTarget = "./cmd/" + e.Name()
+					binaryName = e.Name()
+					break
+				}
+			}
+		}
+	}
+
+	svc.BuildCommand = fmt.Sprintf("CGO_ENABLED=0 GOOS=linux go build -ldflags=\"-w -s\" -o /app/%s %s", binaryName, buildTarget)
+	svc.StartCommand = fmt.Sprintf("/app/%s", binaryName)
 
 	data, err := os.ReadFile(goModPath)
 	if err != nil {
 		return
 	}
 	lines := strings.Split(string(data), "\n")
+	isWebService := false
 	for _, l := range lines {
 		l = strings.TrimSpace(l)
 		if strings.HasPrefix(l, "go ") {
@@ -309,21 +334,31 @@ func parseGoManifest(goModPath string, svc *ServiceInfo) {
 		if strings.Contains(l, "gin-gonic/gin") {
 			svc.Framework = "Gin"
 			addPortIfMissing(svc, 8080)
+			isWebService = true
 		} else if strings.Contains(l, "gofiber/fiber") {
 			svc.Framework = "Fiber"
 			addPortIfMissing(svc, 3000)
+			isWebService = true
 		} else if strings.Contains(l, "labstack/echo") {
 			svc.Framework = "Echo"
 			addPortIfMissing(svc, 8080)
+			isWebService = true
 		} else if strings.Contains(l, "go-chi/chi") {
 			svc.Framework = "Chi"
 			addPortIfMissing(svc, 8080)
+			isWebService = true
+		} else if strings.Contains(l, "spf13/cobra") {
+			svc.Framework = "Cobra CLI"
+		} else if strings.Contains(l, "urfave/cli") {
+			svc.Framework = "CLI"
 		}
 	}
 	if svc.RuntimeVersion == "" {
 		svc.RuntimeVersion = "1.22-alpine"
 	}
-	if len(svc.Ports) == 0 {
+
+	// Only assign default port if it is confirmed to be a web service or source has port mentions
+	if isWebService && len(svc.Ports) == 0 {
 		addPortIfMissing(svc, 8080)
 	}
 }
