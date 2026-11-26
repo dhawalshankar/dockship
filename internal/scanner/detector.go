@@ -34,6 +34,35 @@ func DetectService(dirPath, relPath string) *ServiceInfo {
 		parseNodeManifest(dirPath, pkgJsonPath, svc)
 	}
 
+	// 2. Chrome Extension / WebExtension
+	manifestPath := filepath.Join(dirPath, "manifest.json")
+	if fileExists(manifestPath) && svc.Language == "" {
+		if data, err := os.ReadFile(manifestPath); err == nil {
+			var mf struct {
+				Name            string `json:"name"`
+				ManifestVersion int    `json:"manifest_version"`
+			}
+			if err := json.Unmarshal(data, &mf); err == nil && mf.ManifestVersion > 0 {
+				found = true
+				svc.Language = "Chrome Extension"
+				svc.Framework = fmt.Sprintf("Manifest V%d", mf.ManifestVersion)
+				if mf.Name != "" {
+					svc.Name = mf.Name
+				}
+				addPortIfMissing(svc, 80)
+			}
+		}
+	}
+
+	// 3. Static Web (HTML/JS/CSS without package.json)
+	indexPath := filepath.Join(dirPath, "index.html")
+	if fileExists(indexPath) && svc.Language == "" {
+		found = true
+		svc.Language = "Static Web"
+		svc.Framework = "HTML/CSS/JS"
+		addPortIfMissing(svc, 80)
+	}
+
 	// 2. Python
 	pyProject := filepath.Join(dirPath, "pyproject.toml")
 	reqTxt := filepath.Join(dirPath, "requirements.txt")

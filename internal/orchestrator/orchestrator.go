@@ -184,15 +184,19 @@ func (o *Orchestrator) Run(ctx context.Context) (*RunResult, error) {
 
 		// Runtime validation: run container and check port/health
 		testPort := 0
+		testPorts := make([]int, 0)
 		if len(info.Services) > 0 && len(info.Services[0].Ports) > 0 {
 			testPort = info.Services[0].Ports[0]
+			if testPort > 0 && testPort <= 65535 {
+				testPorts = append(testPorts, testPort)
+			}
 		}
 
 		if o.ui != nil {
 			o.ui.OnHealthcheckStart(testPort)
 		}
 
-		cid, _, runErr := o.dockerClient.Run(ctx, tag, []int{testPort}, nil, "")
+		cid, _, runErr := o.dockerClient.Run(ctx, tag, testPorts, nil, "")
 		if runErr != nil {
 			if o.ui != nil {
 				o.ui.OnHealthcheckComplete(false, runErr)

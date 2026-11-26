@@ -59,8 +59,11 @@ func GetAgentTools() []openai.Tool {
 							Type:        jsonschema.String,
 							Description: "Search pattern or keyword",
 						},
+						"query": {
+							Type:        jsonschema.String,
+							Description: "Search query or pattern (alternative)",
+						},
 					},
-					Required: []string{"pattern"},
 				},
 			},
 		},
@@ -170,20 +173,26 @@ func GetAgentTools() []openai.Tool {
 // Tool invocation parameter structs
 type ListDirParams struct {
 	Path string `json:"path"`
+	Dir  string `json:"dir"`
 }
 
 type ReadFileParams struct {
 	Path     string `json:"path"`
+	File     string `json:"file"`
 	MaxBytes int    `json:"max_bytes"`
 }
 
 type SearchParams struct {
 	Pattern string `json:"pattern"`
+	Query   string `json:"query"`
+	Keyword string `json:"keyword"`
 }
 
 type WriteFileParams struct {
 	Path    string `json:"path"`
+	File    string `json:"file"`
 	Content string `json:"content"`
+	Code    string `json:"code"`
 }
 
 type DockerBuildParams struct {
@@ -202,6 +211,7 @@ type DockerLogsParams struct {
 
 type FinishParams struct {
 	Summary string `json:"summary"`
+	Message string `json:"message"`
 }
 
 func ParseParams[T any](raw string) (*T, error) {

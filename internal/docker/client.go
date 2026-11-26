@@ -86,7 +86,9 @@ func (c *Client) Run(ctx context.Context, tag string, ports []int, env []string,
 
 	args := []string{"run", "-d", "--name", containerName}
 	for _, p := range ports {
-		args = append(args, "-p", fmt.Sprintf("%d:%d", p, p))
+		if p > 0 && p <= 65535 {
+			args = append(args, "-p", fmt.Sprintf("%d:%d", p, p))
+		}
 	}
 	for _, e := range env {
 		args = append(args, "-e", e)
@@ -149,8 +151,17 @@ func (c *Client) WaitPortOrHealth(ctx context.Context, containerID string, port 
 			if err := statusCmd.Run(); err == nil {
 				status := strings.TrimSpace(statusOut.String())
 				if status == "exited" || status == "dead" {
+					// Check exit code: if no port was expected (CLI tool), exit 0 is success
+					exitCodeCmd := exec.CommandContext(ctx, c.dockerBinary, "inspect", "-f", "{{.State.ExitCode}}", containerID)
+					var exitOut bytes.Buffer
+					exitCodeCmd.Stdout = &exitOut
+					_ = exitCodeCmd.Run()
+					exitCode := strings.TrimSpace(exitOut.String())
+					if port == 0 && (exitCode == "0" || exitCode == "") {
+						return nil
+					}
 					logs, _ := c.Logs(ctx, containerID, 40)
-					return fmt.Errorf("container exited prematurely (status: %s):\n%s", status, logs)
+					return fmt.Errorf("container exited prematurely (status: %s, exit code: %s):\n%s", status, exitCode, logs)
 				}
 			}
 

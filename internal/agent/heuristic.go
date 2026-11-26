@@ -20,9 +20,9 @@ func GenerateHeuristicArtifacts(info *scanner.ProjectInfo, ciProvider, registry 
 
 	primarySvc := scanner.ServiceInfo{
 		Name:           info.ProjectName,
-		Language:       "Node.js",
-		RuntimeVersion: "20-alpine",
-		Ports:          []int{3000},
+		Language:       "Static Web",
+		RuntimeVersion: "alpine",
+		Ports:          []int{80},
 	}
 	if len(info.Services) > 0 {
 		primarySvc = info.Services[0]
@@ -61,6 +61,8 @@ func GenerateHeuristicArtifacts(info *scanner.ProjectInfo, ciProvider, registry 
 
 func generateDockerfile(svc *scanner.ServiceInfo) string {
 	switch strings.ToLower(svc.Language) {
+	case "chrome extension", "static web", "html":
+		return generateNginxDockerfile(svc)
 	case "node.js", "javascript", "typescript":
 		return generateNodeDockerfile(svc)
 	case "python":
@@ -76,8 +78,38 @@ func generateDockerfile(svc *scanner.ServiceInfo) string {
 	case "c# / .net", ".net":
 		return generateDotnetDockerfile(svc)
 	default:
-		return generateGenericDockerfile(svc)
+		return generateNginxDockerfile(svc)
 	}
+}
+
+func generateNginxDockerfile(svc *scanner.ServiceInfo) string {
+	port := 80
+	if len(svc.Ports) > 0 {
+		port = svc.Ports[0]
+	}
+
+	title := "Chrome Extension / Web App"
+	if svc.Language != "" {
+		title = svc.Language
+	}
+
+	return fmt.Sprintf(`# Lightweight production Nginx image for %s
+FROM nginx:alpine AS runner
+WORKDIR /usr/share/nginx/html
+
+# Clean default nginx files
+RUN rm -rf /usr/share/nginx/html/*
+
+# Copy static assets into Nginx web root
+COPY . /usr/share/nginx/html/
+
+EXPOSE %d
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:%d/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]
+`, title, port, port)
 }
 
 func generateNodeDockerfile(svc *scanner.ServiceInfo) string {

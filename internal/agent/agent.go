@@ -99,7 +99,14 @@ func (a *Agent) RunAgentLoop(ctx context.Context, projInfo *scanner.ProjectInfo)
 
 		resp, err := a.callLLMWithBackoff(ctx, messages, tools)
 		if err != nil {
-			return "", fmt.Errorf("agent API error: %w", err)
+			if a.listener != nil {
+				a.listener.OnAgentThought(fmt.Sprintf("LLM API rate-limited or unavailable (%v). Seamlessly switching to built-in expert heuristics engine...", err))
+			}
+			artifacts := GenerateHeuristicArtifacts(projInfo, a.cfg.CI, a.cfg.Registry, a.cfg.Compose == "true")
+			for k, v := range artifacts.Files {
+				a.stagedFiles[k] = v
+			}
+			return "Generated artifacts via Dockship built-in heuristics engine (LLM rate-limit fallback).", nil
 		}
 
 		choice := resp.Choices[0]
@@ -207,7 +214,11 @@ func (a *Agent) executeTool(ctx context.Context, name, args string) (string, err
 		if err != nil {
 			return "", err
 		}
-		target := filepath.Join(a.rootDir, p.Path)
+		pathVal := p.Path
+		if pathVal == "" {
+			pathVal = p.Dir
+		}
+		target := filepath.Join(a.rootDir, pathVal)
 		if !a.isPathSafe(target) {
 			return "", fmt.Errorf("permission denied: path is outside project root")
 		}
@@ -230,7 +241,11 @@ func (a *Agent) executeTool(ctx context.Context, name, args string) (string, err
 		if err != nil {
 			return "", err
 		}
-		target := filepath.Join(a.rootDir, p.Path)
+		fileVal := p.Path
+		if fileVal == "" {
+			fileVal = p.File
+		}
+		target := filepath.Join(a.rootDir, fileVal)
 		if !a.isPathSafe(target) {
 			return "", fmt.Errorf("permission denied: path is outside project root")
 		}
@@ -257,6 +272,16 @@ func (a *Agent) executeTool(ctx context.Context, name, args string) (string, err
 		if err != nil {
 			return "", err
 		}
+		pat := p.Pattern
+		if pat == "" {
+			pat = p.Query
+		}
+		if pat == "" {
+			pat = p.Keyword
+		}
+		if pat == "" {
+			return "No search pattern specified.", nil
+		}
 		var matches []string
 		_ = filepath.WalkDir(a.rootDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || len(matches) > 15 {
@@ -267,7 +292,7 @@ func (a *Agent) executeTool(ctx context.Context, name, args string) (string, err
 				return nil
 			}
 			data, _ := os.ReadFile(path)
-			if strings.Contains(string(data), p.Pattern) {
+			if strings.Contains(string(data), pat) {
 				matches = append(matches, rel)
 			}
 			return nil
@@ -282,22 +307,30 @@ func (a *Agent) executeTool(ctx context.Context, name, args string) (string, err
 		if err != nil {
 			return "", err
 		}
-		target := filepath.Join(a.rootDir, p.Path)
+		filePath := p.Path
+		if filePath == "" {
+			filePath = p.File
+		}
+		content := p.Content
+		if content == "" {
+			content = p.Code
+		}
+		target := filepath.Join(a.rootDir, filePath)
 		if !a.isPathSafe(target) {
 			return "", fmt.Errorf("permission denied: path is outside project root")
 		}
 		cleanRel, _ := filepath.Rel(a.rootDir, target)
 		cleanRel = filepath.ToSlash(cleanRel)
-		a.stagedFiles[cleanRel] = p.Content
+		a.stagedFiles[cleanRel] = content
 
 		// If not dry-run and validation is active, write to disk so docker can build it
 		if !a.cfg.DryRun {
 			_ = os.MkdirAll(filepath.Dir(target), 0755)
-			if err := os.WriteFile(target, []byte(p.Content), 0644); err != nil {
+			if err := os.WriteFile(target, []byte(content), 0644); err != nil {
 				return "", err
 			}
 		}
-		return fmt.Sprintf("Successfully staged/wrote %s (%d bytes)", cleanRel, len(p.Content)), nil
+		return fmt.Sprintf("Successfully staged/wrote %s (%d bytes)", cleanRel, len(content)), nil
 
 	case "docker_build":
 		p, err := ParseParams[DockerBuildParams](args)
@@ -356,7 +389,11 @@ func (a *Agent) executeTool(ctx context.Context, name, args string) (string, err
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("FINISHED: %s", p.Summary), nil
+		summary := p.Summary
+		if summary == "" {
+			summary = p.Message
+		}
+		return fmt.Sprintf("FINISHED: %s", summary), nil
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
