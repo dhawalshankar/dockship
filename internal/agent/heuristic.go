@@ -627,11 +627,6 @@ func generateEnvExample(info *scanner.ProjectInfo) string {
 }
 
 func generateDockshipDoc(info *scanner.ProjectInfo, svc *scanner.ServiceInfo, ciProvider, registry string, hasCompose bool) string {
-	port := 3000
-	if len(svc.Ports) > 0 {
-		port = svc.Ports[0]
-	}
-
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("# Dockship Containerization: %s\n\n", info.ProjectName))
 	sb.WriteString("This project was containerized by **Dockship**.\n\n")
@@ -643,7 +638,13 @@ func generateDockshipDoc(info *scanner.ProjectInfo, svc *scanner.ServiceInfo, ci
 	if svc.PackageManager != "" {
 		sb.WriteString(fmt.Sprintf("- **Package Manager:** %s\n", svc.PackageManager))
 	}
-	sb.WriteString(fmt.Sprintf("- **Exposed Port(s):** %d\n\n", port))
+
+	hasPort := len(svc.Ports) > 0
+	if hasPort {
+		sb.WriteString(fmt.Sprintf("- **Exposed Port(s):** %d\n\n", svc.Ports[0]))
+	} else {
+		sb.WriteString("- **Application Type:** CLI / Worker (no network ports exposed)\n\n")
+	}
 
 	sb.WriteString("## Generated Artifacts\n")
 	sb.WriteString("- `Dockerfile`: Multi-stage, non-root, cache-optimized image\n")
@@ -659,7 +660,11 @@ func generateDockshipDoc(info *scanner.ProjectInfo, svc *scanner.ServiceInfo, ci
 	sb.WriteString("\n## How to Run Locally\n\n")
 	sb.WriteString("### Using Docker\n```bash\n")
 	sb.WriteString(fmt.Sprintf("docker build -t %s .\n", strings.ToLower(info.ProjectName)))
-	sb.WriteString(fmt.Sprintf("docker run -p %d:%d %s\n", port, port, strings.ToLower(info.ProjectName)))
+	if hasPort {
+		sb.WriteString(fmt.Sprintf("docker run -p %d:%d %s\n", svc.Ports[0], svc.Ports[0], strings.ToLower(info.ProjectName)))
+	} else {
+		sb.WriteString(fmt.Sprintf("docker run --rm %s --help\n", strings.ToLower(info.ProjectName)))
+	}
 	sb.WriteString("```\n\n")
 
 	if hasCompose {
